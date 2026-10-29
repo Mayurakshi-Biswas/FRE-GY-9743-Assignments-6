@@ -529,7 +529,47 @@ class ProductRFRSwap(Product):
         )
         self.compounding_method_ = compounding_method
 
-        #TODO
+        # ---------------- TODO 1: build the fixed and overnight legs ----------------
+        # Both legs are built UNSIGNED (positive notional). The valuation engine
+        # applies the pay/receive sign, exactly as for the FRA.
+
+        # Accrual schedule calendar: the overnight index's own fixing calendar
+        # (same pattern as floating_leg_1_wo_basis in the basis swap template).
+        schedule_holidays = HolidayConvention(self.on_index_.fixingCalendar().name())
+
+        # Arguments shared by both legs: dates, notional, currency, day count,
+        # and payment rules (pay offset, payment BDC, payment calendar).
+        common = dict(
+            effective_date=self.effective_date_,
+            termination_date=self.termination_date_,
+            notional=self.notional_,
+            currency=self.currency_,
+            accrual_basis=self.accrual_basis_,
+            business_day_convention=self.pay_business_day_convention_,
+            holiday_convention=schedule_holidays,
+            payment_offset=self.pay_offset_,
+            payment_business_day_convention=self.pay_business_day_convention_,
+            payment_holiday_convention=self.pay_holiday_convention_,
+        )
+
+        # Fixed leg: each coupon pays N * alpha_i * K.
+        self.fixed_leg_ = InterestRateStream(
+            **common,
+            accrual_period=self.accrual_period_,
+            fixed_rate=self.fixed_rate_,
+        )
+
+        # Floating leg: each coupon pays N * alpha_i * (compounded ON rate + spread).
+        self.floating_leg_ = InterestRateStream(
+            **common,
+            accrual_period=self.floating_leg_accrual_period_,
+            float_index=self.on_index_str_,
+            is_on_index=True,
+            ois_compounding=self.compounding_method_,
+            ois_spread=self.spread_,
+            fixing_in_arrear=True,
+        )
+        # ---------------------------------------------------------------------------
 
         last_dt_fixed = self.fixed_leg_.last_date
         last_dt_floating = self.floating_leg_.last_date
@@ -727,7 +767,48 @@ class ProductOvernightIndexBasisSwap(Product):
 
         self.floating_leg_1_basis_ = None
         self.floating_leg_1_wo_basis_ = None
-        #TODO
+
+        # ---------------- TODO 2: build both overnight legs ----------------
+        # Leg 1 = index 1 + spread; leg 2 = index 2 flat. Both UNSIGNED;
+        # the valuation engine applies the pay/receive sign.
+        # Leg 1 uses exactly the same schedule settings as the supplied
+        # floating_leg_1_wo_basis, so that
+        #     PV(leg 1) = PV(leg 1 without spread) + PV(spread leg).
+
+        # Arguments shared by both legs.
+        common = dict(
+            effective_date=self.effective_date_,
+            termination_date=self.termination_date_,
+            notional=self.notional_,
+            currency=self.currency_,
+            accrual_basis=self.accrual_basis_,
+            business_day_convention=self.pay_business_day_convention_,
+            is_on_index=True,
+            ois_compounding=self.compounding_method_,
+            fixing_in_arrear=True,
+            payment_offset=self.pay_offset_,
+            payment_business_day_convention=self.pay_business_day_convention_,
+            payment_holiday_convention=self.pay_holiday_convention_,
+        )
+
+        # Leg 1: index 1 (e.g. SOFR) compounded, PLUS the basis spread.
+        self.floating_leg_1_ = InterestRateStream(
+            **common,
+            accrual_period=self.accrual_period_1_,
+            holiday_convention=HolidayConvention(self.on_index_1_.fixingCalendar().name()),
+            float_index=self.on_index_str_1_,
+            ois_spread=self.spread_,
+        )
+
+        # Leg 2: index 2 (e.g. Fed Funds) compounded, NO spread.
+        self.floating_leg_2_ = InterestRateStream(
+            **common,
+            accrual_period=self.accrual_period_2_,
+            holiday_convention=HolidayConvention(self.on_index_2_.fixingCalendar().name()),
+            float_index=self.on_index_str_2_,
+            ois_spread=0.0,
+        )
+        # -------------------------------------------------------------------
 
         last_dt_floating_1 = self.floating_leg_1_.last_date
         last_dt_floating_2 = self.floating_leg_2_.last_date

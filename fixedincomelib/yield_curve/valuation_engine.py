@@ -160,8 +160,21 @@ class ValuationEngineProductRfrSwap(ValuationEngineProduct):
         self.floating_leg_engine_ = ValuationEngineInterestRateStream(model, valuation_parameters_collection, product.floating_leg, request)
 
     def calculate_value(self):
-        #TODO
-        pass
+        # ---------------- TODO 5 ----------------
+        # 1. Price each (unsigned) leg: sum_i N * alpha_i * (rate_i + spread_i) * Df(t, T_pay_i).
+        self.fixed_leg_engine_.calculate_value()
+        self.floating_leg_engine_.calculate_value()
+
+        # 2. Swap PV = signed sum of leg PVs.
+        #    receive: (+1) * PV_fixed + (-1) * PV_float
+        #    pay:     (-1) * PV_fixed + (+1) * PV_float
+        self.value_ = (self.fixed_leg_sign_ * self.fixed_leg_engine_.value
+                       + self.floating_leg_sign_ * self.floating_leg_engine_.value)
+
+        # 3. Cash paid on the value date, combined with the same signs.
+        self.cash_ = (self.fixed_leg_sign_ * self.fixed_leg_engine_.cash
+                      + self.floating_leg_sign_ * self.floating_leg_engine_.cash)
+        # ----------------------------------------
 
     def create_cash_flows_report(self):
         return _combine_cashflow_reports([
@@ -215,8 +228,18 @@ class ValuationEngineProductOvernightIndexBasisSwap(ValuationEngineProduct):
                 ("Leg 2 index", self.floating_leg_2_sign_, self.floating_leg_2_engine_)]
 
     def calculate_value(self):
-        #TODO
-        pass
+        # ---------------- TODO 6 ----------------
+        # PV = s1 * PV(leg 1 index, no spread)
+        #    + s1 * PV(leg 1 spread, a fixed coupon at rate = spread)
+        #    + s2 * PV(leg 2 index)
+        # with s1 = +1 / s2 = -1 for receive (signs flipped for pay).
+        self.value_ = 0.0
+        self.cash_ = 0.0
+        for _, sign, engine in self._legs():
+            engine.calculate_value()
+            self.value_ += sign * engine.value
+            self.cash_ += sign * engine.cash
+        # ----------------------------------------
 
     def create_cash_flows_report(self):
         return _combine_cashflow_reports(self._legs())
